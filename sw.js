@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, keep fonts for offline use.
-const VERSION = 'reading-log-v1';
+const VERSION = 'reading-log-v2';
 const SHELL = [
   './',
   './index.html',
@@ -13,6 +13,9 @@ const SHELL = [
   './js/views.js',
   './js/ui.js',
   './js/sample.js',
+  './js/room3d.js',
+  './vendor/three/three.module.min.js',
+  './vendor/three/three.core.min.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',

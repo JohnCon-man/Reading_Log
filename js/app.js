@@ -36,8 +36,7 @@ function backTarget() {
   if (name === 'book') {
     const book = store.getBook(id);
     if (book?.status === 'finished') return '#/shelf';
-    const reading = store.getState().books.filter((b) => b.status === 'reading');
-    return reading.length > 1 ? '#/current' : '#/';
+    return '#/current';
   }
   return '#/';
 }
@@ -51,17 +50,68 @@ const ctx = {
 
 /* ───────── Rendering ───────── */
 
+/* The study is 3D when the device supports it, with the illustrated SVG
+   room as a fallback (no WebGL, or the 3D assets fail to load). */
+let room = null;
+let roomState = 'pending'; // pending → 3d | svg
+
+function webglAvailable() {
+  try {
+    return Boolean(window.WebGL2RenderingContext && document.createElement('canvas').getContext('webgl2'));
+  } catch {
+    return false;
+  }
+}
+
+async function init3D() {
+  const loader = $('#loader');
+  if (!webglAvailable() || new URLSearchParams(location.search).has('2d')) return useSvg();
+  try {
+    const { createRoom } = await import('./room3d.js');
+    await document.fonts?.ready;
+    room = await createRoom(sceneEl, {
+      onPick: (go, bookId) => {
+        if (go === 'book') navigate(`#/book/${bookId}`);
+        else navigate(go === 'current' ? '#/current' : `#/${go}`);
+      },
+      onProgress: (f) => loader?.style.setProperty('--p', f),
+    });
+    roomState = '3d';
+    document.body.classList.add('room-3d');
+    drawScene();
+    room.setPaused(document.body.classList.contains('in-view'));
+  } catch (e) {
+    console.warn('3D study unavailable, using the illustrated one', e);
+    room = null;
+    sceneEl.innerHTML = '';
+    useSvg();
+  }
+  loader?.classList.add('done');
+  setTimeout(() => loader?.remove(), 800);
+}
+
+function useSvg() {
+  roomState = 'svg';
+  $('#loader')?.classList.add('done');
+  drawScene();
+}
+
 function drawScene() {
   const state = store.getState();
   const stats = computeStats(state);
-  sceneEl.innerHTML = renderScene(state, stats);
-  fitScene(sceneEl.firstElementChild);
+  if (roomState === '3d' && room) room.update(state, stats);
+  else if (roomState === 'svg') {
+    sceneEl.innerHTML = renderScene(state, stats);
+    fitScene(sceneEl.firstElementChild);
+  }
   const goal = stats.goalDaily;
   $('#today-line').textContent = stats.pagesToday
     ? `${stats.pagesToday} of ${goal} pages today${stats.pagesToday >= goal ? ' ✓' : ''}`
     : stats.currentStreak
       ? 'Read today to keep your streak'
-      : 'Tap around the room';
+      : roomState === '3d'
+        ? 'Tap around the room · drag to look'
+        : 'Tap around the room';
   $('#streak-num').textContent = stats.currentStreak;
   $('#streak-chip').classList.toggle('lit', stats.readToday);
   $('#streak-chip').setAttribute('aria-label', `${stats.currentStreak} day streak — open stats`);
@@ -78,6 +128,7 @@ function renderView(keepScroll = false) {
   else if (views[name]) v = views[name](ctx);
 
   document.body.classList.toggle('in-view', Boolean(v));
+  room?.setPaused(Boolean(v));
   if (!v) {
     if (viewEl.firstChild) {
       viewEl.firstElementChild.classList.add('leaving');
@@ -159,10 +210,6 @@ sceneEl.addEventListener('click', (e) => {
   navigator.vibrate?.(8);
   setTimeout(() => {
     sceneEl.querySelectorAll('.tapped').forEach((g) => g.classList.remove('tapped'));
-    if (go === 'current') {
-      const reading = store.getState().books.filter((b) => b.status === 'reading');
-      return navigate(reading.length === 1 ? `#/book/${reading[0].id}` : '#/current');
-    }
     navigate(`#/${go}`);
   }, 160);
 });
@@ -179,7 +226,7 @@ $('#brand').addEventListener('click', () => navigate('#/', { replace: true }));
 
 window.addEventListener('popstate', route);
 window.addEventListener('hashchange', route);
-window.addEventListener('resize', () => fitScene(sceneEl.firstElementChild));
+window.addEventListener('resize', () => roomState === 'svg' && fitScene(sceneEl.firstElementChild));
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !closeTopModal() && document.body.classList.contains('in-view')) goBack(backTarget());
 });
@@ -197,6 +244,7 @@ document.addEventListener('visibilitychange', () => {
 if (!history.state) history.replaceState({ depth: 0 }, '', location.hash || '#/');
 afterChange({ silent: true });
 route();
+init3D();
 topbar.classList.add('ready');
 requestAnimationFrame(() => document.body.classList.add('loaded'));
 

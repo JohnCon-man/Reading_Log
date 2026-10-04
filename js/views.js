@@ -41,26 +41,60 @@ function spine(book) {
   </button>`;
 }
 
+// Books added straight to the shelf this year with no reading sessions logged:
+// likely older reads that picked up today's date by default.
+function likelyOldReads(finished, today) {
+  return finished.filter(
+    (b) =>
+      b.finishedAt &&
+      !b.dateConfirmed &&
+      yearOf(b.finishedAt) === yearOf(today) &&
+      b.createdAt &&
+      b.finishedAt === b.createdAt.slice(0, 10) &&
+      !store.logsFor(b.id).length
+  );
+}
+
+const byFinished = (a, b) => {
+  if (!a.finishedAt !== !b.finishedAt) return a.finishedAt ? -1 : 1; // undated go last
+  return (b.finishedAt || '').localeCompare(a.finishedAt || '') || (b.createdAt || '').localeCompare(a.createdAt || '');
+};
+
 export function shelfView(ctx) {
   const { books } = store.getState();
-  const finished = books
-    .filter((b) => b.status === 'finished')
-    .sort((a, b) => (b.finishedAt || '').localeCompare(a.finishedAt || ''));
+  const today = todayStr();
+  const finished = books.filter((b) => b.status === 'finished').sort(byFinished);
   const years = [...new Set(finished.map((b) => b.finishedAt && yearOf(b.finishedAt)).filter(Boolean))].sort((a, b) => b - a);
-  if (shelfYear !== 'all' && !years.includes(shelfYear)) shelfYear = 'all';
-  const shown = shelfYear === 'all' ? finished : finished.filter((b) => b.finishedAt && yearOf(b.finishedAt) === shelfYear);
+  const undated = finished.filter((b) => !b.finishedAt);
+  const filters = years.length + (undated.length ? 1 : 0);
+  if (shelfYear === 'undated' ? !undated.length : shelfYear !== 'all' && !years.includes(shelfYear)) shelfYear = 'all';
+  const shown =
+    shelfYear === 'all'
+      ? finished
+      : shelfYear === 'undated'
+        ? undated
+        : finished.filter((b) => b.finishedAt && yearOf(b.finishedAt) === shelfYear);
   const pages = shown.reduce((s, b) => s + (Number(b.totalPages) || 0), 0);
   const rated = shown.filter((b) => b.rating);
   const avg = rated.length ? (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1) : null;
+  const suspects = likelyOldReads(finished, today);
 
   const html = `<section class="view view--shelf">
     ${head('The Bookshelf', { right: `<button class="icon-btn" data-action="add-finished" aria-label="Add a book you've read">＋</button>` })}
     <div class="view-scroll">
-      ${years.length > 1 ? `<div class="chips" role="tablist">
+      ${suspects.length ? `<div class="notice">
+        <p><b>${plural(suspects.length, 'book')}</b> you added today ${suspects.length === 1 ? 'is' : 'are'} counting toward your ${yearOf(today)} goal. Older reads?</p>
+        <div class="notice-actions">
+          <button class="btn btn--gold" data-action="undate-suspects">Mark as older reads (no date)</button>
+          <button class="btn btn--ghost-light" data-action="keep-suspects">No, I read ${suspects.length === 1 ? 'it' : 'them'} this year</button>
+        </div>
+      </div>` : ''}
+      ${filters > 1 ? `<div class="chips" role="tablist">
         <button class="chip${shelfYear === 'all' ? ' on' : ''}" data-year="all">All</button>
         ${years.map((y) => `<button class="chip${shelfYear === y ? ' on' : ''}" data-year="${y}">${y}</button>`).join('')}
+        ${undated.length ? `<button class="chip${shelfYear === 'undated' ? ' on' : ''}" data-year="undated">Earlier</button>` : ''}
       </div>` : ''}
-      <p class="shelf-summary">${plural(shown.length, 'book')} · ${num(pages)} pages${avg ? ` · <span class="gold">★</span> ${avg} avg` : ''}</p>
+      <p class="shelf-summary">${plural(shown.length, 'book')} · ${num(pages)} pages${avg ? ` · <span class="gold">★</span> ${avg} avg` : ''}${shelfYear === 'undated' ? '<br><small>Older reads, not counted toward any year</small>' : ''}</p>
       <div class="bookcase">
         <div class="shelf">
           ${shown.map(spine).join('')}
@@ -77,7 +111,8 @@ export function shelfView(ctx) {
     root.addEventListener('click', (e) => {
       const y = e.target.closest('[data-year]');
       if (y) {
-        shelfYear = y.dataset.year === 'all' ? 'all' : Number(y.dataset.year);
+        const v = y.dataset.year;
+        shelfYear = v === 'all' || v === 'undated' ? v : Number(v);
         ctx.refresh();
         return;
       }
@@ -88,7 +123,17 @@ export function shelfView(ctx) {
         setTimeout(() => ctx.navigate(`#/book/${s.dataset.open}`), 220);
       }
     });
-    root.addEventListener('action:add-finished', () => bookForm(ctx, { status: 'finished' }));
+    root.addEventListener('action:add-finished', () => bookForm(ctx, { status: 'finished', finishedAt: null }));
+    root.addEventListener('action:undate-suspects', () => {
+      suspects.forEach((b) => store.updateBook(b.id, { finishedAt: null, startedAt: null, dateConfirmed: true }));
+      ctx.afterChange();
+      ctx.refresh();
+      toast(`Moved to <b>Earlier</b> — they no longer count toward ${yearOf(today)}`, { icon: '📚' });
+    });
+    root.addEventListener('action:keep-suspects', () => {
+      suspects.forEach((b) => store.updateBook(b.id, { dateConfirmed: true }));
+      ctx.refresh();
+    });
   };
   return { html, mount };
 }
@@ -97,11 +142,13 @@ export function shelfView(ctx) {
 
 export function currentView(ctx) {
   const state = store.getState();
-  const reading = state.books.filter((b) => b.status === 'reading');
   const today = todayStr();
+  const reading = state.books
+    .filter((b) => b.status === 'reading')
+    .map((b) => ({ b, p: bookProgress(b, state.logs) }))
+    .sort((x, y) => (y.p.lastDate || y.b.startedAt || '').localeCompare(x.p.lastDate || x.b.startedAt || ''));
   const cards = reading
-    .map((b) => {
-      const p = bookProgress(b, state.logs);
+    .map(({ b, p }) => {
       const readToday = p.lastDate === today;
       return `<button class="read-card" data-open="${b.id}">
         <span class="mini-cover" style="--c:${esc(b.color)}"><span>${esc(b.title)}</span></span>
@@ -120,11 +167,12 @@ export function currentView(ctx) {
     ${head('On the Nightstand')}
     <div class="view-scroll">
       <div class="card-list">
+        ${reading.length > 1 ? `<p class="list-note">${plural(reading.length, 'book')} in rotation · most recently read first</p>` : ''}
         ${cards || `<div class="paper paper--card empty-paper">
           <p class="hand big">Nothing on the nightstand…</p>
           <p class="hand">Pick up a book and start a fresh page in your notebook.</p>
         </div>`}
-        <button class="btn btn--primary btn--block" data-action="add-reading">＋ Start a new book</button>
+        <button class="btn btn--primary btn--block" data-action="add-reading">＋ ${reading.length ? 'Add another book' : 'Start a new book'}</button>
       </div>
     </div>
   </section>`;
@@ -173,11 +221,22 @@ function readingBookView(ctx, book) {
   const logs = store.logsFor(book.id);
   const p = bookProgress(book, state.logs);
   const today = todayStr();
-  const backLabel = state.books.filter((b) => b.status === 'reading').length > 1 ? 'Nightstand' : 'Study';
+  const reading = state.books.filter((b) => b.status === 'reading');
+  const tabs = `<nav class="book-tabs" aria-label="Current reads">
+    ${reading
+      .map(
+        (b) => `<button class="book-tab${b.id === book.id ? ' on' : ''}" data-switch="${b.id}" style="--c:${esc(b.color)}"${b.id === book.id ? ' aria-current="page"' : ''}>
+          <i aria-hidden="true"></i><span>${esc(b.title)}</span>
+        </button>`
+      )
+      .join('')}
+    <button class="book-tab book-tab--add" data-action="add-reading" aria-label="Start another book">＋</button>
+  </nav>`;
 
   const html = `<section class="view view--desk">
-    ${head('Notebook', { back: backLabel, right: `<button class="icon-btn" data-action="book-menu" aria-label="Book options">⋯</button>` })}
+    ${head('Notebook', { back: 'Nightstand', right: `<button class="icon-btn" data-action="book-menu" aria-label="Book options">⋯</button>` })}
     <div class="view-scroll">
+      ${tabs}
       <article class="paper notebook">
         <header class="nb-head">
           <h2 class="nb-title">${esc(book.title)}</h2>
@@ -353,6 +412,12 @@ function readingBookView(ctx, book) {
 
     root.addEventListener('action:finish', () => finishForm(ctx, book));
     root.addEventListener('action:book-menu', () => bookMenu(ctx, book));
+    root.addEventListener('action:add-reading', () => bookForm(ctx, { status: 'reading' }));
+    root.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-switch]');
+      if (t && t.dataset.switch !== book.id) ctx.navigate(`#/book/${t.dataset.switch}`, { replace: true });
+    });
+    $('.book-tab.on', root)?.scrollIntoView({ inline: 'center', block: 'nearest' });
   };
   return { html, mount };
 }
@@ -374,7 +439,7 @@ function finishedBookView(ctx, book) {
           <p class="nb-rating">${stars(book.rating || 0)}</p>
         </header>
         <dl class="facts">
-          <div><dt>Read</dt><dd>${book.startedAt ? `${fmtShort(book.startedAt)} – ` : ''}${book.finishedAt ? fmtFull(book.finishedAt) : '—'}</dd></div>
+          <div><dt>Read</dt><dd>${book.finishedAt ? `${book.startedAt ? `${fmtShort(book.startedAt)} – ` : ''}${fmtFull(book.finishedAt)}` : 'A while back'}</dd></div>
           <div><dt>Pages</dt><dd>${book.totalPages ? num(book.totalPages) : '—'}</dd></div>
           ${span ? `<div><dt>Took</dt><dd>${plural(span, 'day')}${p.days ? `, read on ${p.days}` : ''}</dd></div>` : ''}
         </dl>
@@ -437,25 +502,33 @@ export function bookForm(ctx, bookOrDefaults = {}) {
   const today = todayStr();
   const isFinished = b.status === 'finished';
   let rating = b.rating || 0;
+  let dated = isFinished ? Boolean(b.finishedAt) : true;
 
   openModal(
     `<form class="book-form" novalidate>
       <h2 class="modal-title">${editing ? 'Edit book' : isFinished ? 'Add a book you’ve read' : 'Start a new book'}</h2>
       <label class="field"><span>Title</span><input name="title" required value="${esc(b.title)}" placeholder="The Name of the Rose" autocapitalize="words"></label>
       <label class="field"><span>Author</span><input name="author" value="${esc(b.author)}" placeholder="Umberto Eco" autocapitalize="words"></label>
-      <label class="field"><span>Total pages</span><input name="totalPages" type="number" inputmode="numeric" min="1" value="${esc(b.totalPages)}" placeholder="512"></label>
-      <div class="field-row">
-        <label class="field"><span>Started</span><input name="startedAt" type="date" max="${today}" value="${esc(b.startedAt || today)}"></label>
+      <label class="field"><span>Total pages <em>(optional)</em></span><input name="totalPages" type="number" inputmode="numeric" min="1" value="${esc(b.totalPages)}" placeholder="512"></label>
+      ${isFinished ? `<div class="field"><span>When did you read it?</span>
+        <div class="segmented" role="radiogroup">
+          <button type="button" role="radio" class="seg${dated ? '' : ' on'}" data-dated="0" aria-checked="${!dated}">Don’t remember</button>
+          <button type="button" role="radio" class="seg${dated ? ' on' : ''}" data-dated="1" aria-checked="${dated}">Pick a date</button>
+        </div>
+        <small class="field-hint" data-hint>${dated ? 'Counts toward that year’s goal.' : 'Goes on your shelf without counting toward any yearly goal.'}</small>
+      </div>` : ''}
+      <div class="field-row" data-dates ${dated ? '' : 'hidden'}>
+        <label class="field"><span>Started${isFinished ? ' <em>(optional)</em>' : ''}</span><input name="startedAt" type="date" max="${today}" value="${esc(b.startedAt || (isFinished ? '' : today))}"></label>
         ${isFinished ? `<label class="field"><span>Finished</span><input name="finishedAt" type="date" max="${today}" value="${esc(b.finishedAt || today)}"></label>` : ''}
       </div>
       ${isFinished ? `<div class="field"><span>Rating</span>${stars(rating, { input: true })}</div>
-        <label class="field"><span>Final thoughts</span><textarea name="review" rows="3" placeholder="What stayed with you?">${esc(b.review || '')}</textarea></label>` : ''}
+        <label class="field"><span>Final thoughts <em>(optional)</em></span><textarea name="review" rows="3" placeholder="What stayed with you?">${esc(b.review || '')}</textarea></label>` : ''}
       <div class="field"><span>Spine colour</span>
         <div class="swatches">${SPINE_COLORS.map((c) => `<button type="button" class="swatch${c === b.color ? ' on' : ''}" data-color="${c}" style="--c:${c}" aria-label="Colour ${c}"></button>`).join('')}</div>
       </div>
       <p class="form-error" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn--ghost" data-close>Cancel</button>
+        ${!editing && isFinished ? `<button type="submit" class="btn btn--ghost" data-again>Save &amp; add another</button>` : `<button type="button" class="btn btn--ghost" data-close>Cancel</button>`}
         <button type="submit" class="btn btn--primary">${editing ? 'Save' : isFinished ? 'Put it on the shelf' : 'Put it on the nightstand'}</button>
       </div>
     </form>`,
@@ -463,13 +536,26 @@ export function bookForm(ctx, bookOrDefaults = {}) {
       onMount: (m, close) => {
         const form = $('form', m);
         let color = b.color;
+        let again = false;
         const sr = $('.stars--input', m);
         if (sr) bindStars(sr, (n) => (rating = n));
         m.addEventListener('click', (e) => {
           const sw = e.target.closest('[data-color]');
-          if (!sw) return;
-          color = sw.dataset.color;
-          $$('.swatch', m).forEach((s) => s.classList.toggle('on', s === sw));
+          if (sw) {
+            color = sw.dataset.color;
+            $$('.swatch', m).forEach((s) => s.classList.toggle('on', s === sw));
+          }
+          const seg = e.target.closest('[data-dated]');
+          if (seg) {
+            dated = seg.dataset.dated === '1';
+            $$('[data-dated]', m).forEach((x) => {
+              x.classList.toggle('on', x === seg);
+              x.setAttribute('aria-checked', String(x === seg));
+            });
+            $('[data-dates]', m).hidden = !dated;
+            $('[data-hint]', m).textContent = dated ? 'Counts toward that year’s goal.' : 'Goes on your shelf without counting toward any yearly goal.';
+          }
+          if (e.target.closest('[data-again]')) again = true;
         });
         if (!editing) setTimeout(() => form.elements.title.focus(), 250);
         form.addEventListener('submit', (e) => {
@@ -480,6 +566,7 @@ export function bookForm(ctx, bookOrDefaults = {}) {
           if (!title) {
             err.textContent = 'Every book needs a title.';
             err.hidden = false;
+            again = false;
             f.title.focus();
             return;
           }
@@ -487,14 +574,22 @@ export function bookForm(ctx, bookOrDefaults = {}) {
             title,
             author: f.author.value.trim(),
             totalPages: Math.max(0, Math.round(Number(f.totalPages.value) || 0)),
-            startedAt: f.startedAt.value || today,
             color,
           };
           if (isFinished) {
-            data.finishedAt = f.finishedAt.value || today;
             data.rating = rating;
             data.review = f.review.value.trim();
-            if (data.finishedAt < data.startedAt) data.startedAt = data.finishedAt;
+            data.dateConfirmed = true;
+            if (dated) {
+              data.finishedAt = f.finishedAt.value || today;
+              data.startedAt = f.startedAt.value || null;
+              if (data.startedAt && data.finishedAt < data.startedAt) data.startedAt = data.finishedAt;
+            } else {
+              data.finishedAt = null;
+              data.startedAt = null;
+            }
+          } else {
+            data.startedAt = f.startedAt.value || today;
           }
           close();
           if (editing) {
@@ -502,16 +597,17 @@ export function bookForm(ctx, bookOrDefaults = {}) {
             ctx.afterChange();
             ctx.refresh();
             toast('Saved', { icon: '✒️' });
+            return;
+          }
+          const nb = store.addBook({ ...data, status: b.status });
+          ctx.afterChange({ finished: isFinished });
+          if (isFinished) {
+            ctx.refresh();
+            toast(`<b>${esc(nb.title)}</b> is on the shelf${nb.finishedAt ? '' : ' (no date)'}`, { icon: '📚' });
+            if (again) setTimeout(() => bookForm(ctx, { status: 'finished', finishedAt: null }), 260);
           } else {
-            const nb = store.addBook({ ...data, status: b.status });
-            ctx.afterChange({ finished: isFinished });
-            if (isFinished) {
-              ctx.refresh();
-              toast(`<b>${esc(nb.title)}</b> is on the shelf`, { icon: '📚' });
-            } else {
-              ctx.navigate(`#/book/${nb.id}`);
-              toast(`A fresh notebook for <b>${esc(nb.title)}</b>`, { icon: '📓' });
-            }
+            ctx.navigate(`#/book/${nb.id}`);
+            toast(`A fresh notebook for <b>${esc(nb.title)}</b>`, { icon: '📓' });
           }
         });
       },

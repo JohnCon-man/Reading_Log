@@ -17,9 +17,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap">
   <link rel="stylesheet" href="css/styles.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+  <link rel="modulepreload" href="vendor/three/three.module.min.js">
+  <link rel="modulepreload" href="vendor/three/three.core.min.js">
 </head>
 <body>
   <div id="scene" aria-label="Your study"></div>
+  <div id="loader" aria-live="polite"><div class="loader-inner"><span class="loader-flame"></span><p>Lighting the fire…</p><div class="loader-bar"><i></i></div></div></div>
 
   <header id="topbar">
     <button id="brand" class="brand" aria-label="Back to the study">

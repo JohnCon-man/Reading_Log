@@ -2,15 +2,19 @@
 
 A cozy, simple reading tracker that runs in your phone's browser and installs to your home screen like an app.
 
-You open it to a study at night: a wooden bookshelf, a black leather chair, a fire burning, and a lamp lit beside a cup of coffee. Tap things in the room to get around:
+You open it to a 3D study at night. A black leather armchair sits in the corner with a footstool, a bookshelf lines one wall, and a brick fireplace burns on the other. A nightstand beside the chair holds an oil lamp, a steaming mug and your current reads. Drag to look around; tap things to get around:
 
 | Tap… | Opens |
 | --- | --- |
-| **The bookshelf** | Every book you've finished, as spines on wooden shelves. Tap a spine to read your notes from that book. Filter by year. |
-| **The books on the nightstand** | Your current reads. Each one has a paper notebook: enter the pages you read (today's date is filled in for you) and add bulleted notes. |
+| **The bookshelf** | Every book you've finished, as spines on wooden shelves (their titles are painted on the 3D spines too; tap one to open it). Filter by year, or **Earlier** for older reads with no date. |
+| **The books on the nightstand** | Your current reads — as many as you're rotating through. Each has a paper notebook: enter the pages you read (today's date is filled in for you) and add bulleted notes. Tabs at the top switch between books. |
 | **The fireplace** | Stats and goals: streaks, pages, books this year, a reading heatmap, pages per month, levels and achievements. |
 
 The room changes with your reading. Finished books fill the shelf, current reads stack on the nightstand, and **the fire grows the longer your streak runs.**
+
+## Adding books you read in the past
+
+Tap **＋** on the bookshelf. Under *When did you read it?* leave **Don't remember** selected and the book goes on your shelf without counting toward any year's goal. Use **Save & add another** to enter a backlog quickly. If you'd already added older books that picked up today's date, the shelf offers to move them to **Earlier** in one tap.
 
 ## Gamified bits
 
@@ -41,6 +45,10 @@ Everything is stored **on your device** (in the browser's local storage). No acc
 
 Want to look around first? With an empty log, **⚙ Settings → Fill with sample data** loads a small example library. Erase it from the same menu when you're ready to start for real.
 
+## The 3D room
+
+The room is rendered with [three.js](https://threejs.org) (vendored in `vendor/three`, MIT). Furniture models and surface textures are CC0 assets from [Poly Haven](https://polyhaven.com), compressed for phones (about 6 MB, cached after the first visit). On devices without WebGL 2, or if the 3D assets fail to load, the app automatically falls back to an illustrated 2D study. Add `?2d` to the URL to force it.
+
 ## Running it locally
 
 There's no build step. Serve the folder with any static server:
@@ -59,13 +67,16 @@ Then open the printed URL. (It must be served over http(s), not opened as a file
 index.html            app shell
 css/styles.css        all styling (paper texture, bookcase, stats ledger)
 js/app.js             routing, rendering, gamification hooks
-js/scene.js           the SVG study illustration
+js/room3d.js          the 3D study (three.js)
+js/scene.js           the 2D illustrated study (fallback)
 js/views.js           bookshelf, notebook, nightstand, stats, forms, settings
 js/stats.js           streaks, totals, goals, XP/levels
 js/achievements.js    achievement definitions
 js/store.js           localStorage persistence
 js/dates.js           local-date helpers
 js/sample.js          optional sample library
+assets/               3D models and textures (Poly Haven, CC0)
+vendor/three/         three.js and the add-ons it uses
 sw.js                 offline cache
 manifest.webmanifest  install metadata + icons
 ```
