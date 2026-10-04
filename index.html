@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reading Log</title>
+  <meta name="description" content="A cozy reading tracker: log pages and notes, build streaks, and fill your bookshelf.">
+  <meta name="theme-color" content="#1a110b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Reading Log">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="scene" aria-label="Your study"></div>
+
+  <header id="topbar">
+    <button id="brand" class="brand" aria-label="Back to the study">
+      <span class="brand-name">Reading Log</span>
+      <span id="today-line" class="brand-sub"></span>
+    </button>
+    <div class="topbar-right">
+      <button id="streak-chip" class="streak-chip">
+        <svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2c4 10 16 16 16 30a16 16 0 0 1-32 0c0-8 4-12 8-16 0 6 2 9 5 10-2-10 1-17 3-24z"/></svg>
+        <span id="streak-num">0</span>
+      </button>
+      <button id="settings-btn" class="icon-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zm7.4-2.6.1-.9-.1-.9 2-1.6-2-3.4-2.4.9a7.6 7.6 0 0 0-1.6-.9L15 3.5h-4l-.4 2.6c-.6.2-1.1.5-1.6.9l-2.4-1-2 3.5 2 1.6-.1.9.1.9-2 1.6 2 3.4 2.4-.9c.5.4 1 .7 1.6.9l.4 2.6h4l.4-2.6c.6-.2 1.1-.5 1.6-.9l2.4.9 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="view"></main>
+  <div id="toasts" aria-live="polite"></div>
+
+  <noscript><p style="color:#eee;padding:2rem">Reading Log needs JavaScript turned on.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
